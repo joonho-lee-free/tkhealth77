@@ -158,7 +158,9 @@
       window.open(`/tkhealth_excel.html?${type}=${value}`);
     }
 
-    window.onload = fetchData;
+    window.onload = () => {
+      initMap();
+      fetchData();
   </script>
 </body>
 </html>
