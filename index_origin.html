@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>TK의 즐거운 하루</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .chart-container { width: 100%; max-width: 800px; margin-bottom: 40px; }
+    .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 10px; }
+    button { padding: 8px 12px; border: none; background-color: #1976d2; color: white; border-radius: 5px; cursor: pointer; }
+    button:hover { background-color: #1565c0; }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <h1>TK의 즐거운 하루</h1>
+    <div>
+      <input type="date" id="datePicker">
+      <button onclick="saveExcel('daily')">일별 Excel 저장</button>
+      <input type="month" id="monthPicker">
+      <button onclick="saveExcel('monthly')">월별 Excel 저장</button>
+    </div>
+  </div>
+
+  <div class="chart-container"><h2>1. 기침 데이터</h2><canvas id="coughChart"></canvas></div>
+  <div class="chart-container"><h2>2. 체온 (선형)</h2><canvas id="tempChart"></canvas></div>
+  <div class="chart-container"><h2>3. 심박수 (선형)</h2><canvas id="heartChart"></canvas></div>
+  <div class="chart-container"><h2>4. 산소포화도 (선형)</h2><canvas id="oxygenChart"></canvas></div>
+  <div class="chart-container"><h2>5. 걸음수 + 칼로리</h2><canvas id="stepChart"></canvas></div>
+  <div class="chart-container"><h2>6. 운동 기록 + 칼로리</h2><canvas id="exerciseChart"></canvas></div>
+  <div class="chart-container"><h2>7. 수면 기록</h2><canvas id="sleepChart"></canvas></div>
+  <div class="chart-container"><h2>8. 스트레스 지수</h2><canvas id="stressChart"></canvas></div>
+
+  <script>
+    const firebaseConfig = { apiKey: "AIzaSyBgo9r4epKHiq2CrXpayDtgHB4M_lgzC68", authDomain: "tkhealth-30380.firebaseapp.com", projectId: "tkhealth-30380", storageBucket: "tkhealth-30380.appspot.com", messagingSenderId: "692900691095", appId: "1:692900691095:web:babfe553aef6aa4dddfdd2" };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    const timeLabels = [...Array(24)].flatMap(h => [`${String(h).padStart(2, '0')}:00`, `${String(h).padStart(2, '0')}:15`, `${String(h).padStart(2, '0')}:30`, `${String(h).padStart(2, '0')}:45`]);
+
+    const avg = (arr, countArr) => arr.map((v, i) => countArr[i] ? (v / countArr[i]).toFixed(1) : 0);
+
+    function drawChart(id, label, data, color, type = 'line', labels = timeLabels, yMin = 0, yMax = undefined) {
+      const bgColor = Array.isArray(color)
+        ? color
+        : (type === 'bar')
+          ? data.map(v => v >= 20 ? 'red' : color)
+          : color;
+
+      new Chart(document.getElementById(id), {
+        type,
+        data: {
+          labels,
+          datasets: [{ label, data, backgroundColor: bgColor, borderColor: color, fill: false }]
+        },
+        options: {
+          plugins: {
+            datalabels: {
+              display: true,
+              color: '#000',
+              font: { weight: 'bold' },
+              formatter: v => v
+            }
+          },
+          scales: { y: { beginAtZero: true, min: yMin, max: yMax } }
+        },
+        plugins: [ChartDataLabels]
+      });
+    }
+
+    async function fetchData() {
+      const cough = Array(96).fill(0);
+      const heart = Array(96).fill(0), heartN = Array(96).fill(0);
+      const oxygen = Array(96).fill(0), oxygenN = Array(96).fill(0);
+      const temp = Array(96).fill(0), tempN = Array(96).fill(0);
+      const steps = Array(96).fill(0), cal = Array(96).fill(0);
+      const stress = Array(96).fill(0), stressN = Array(96).fill(0);
+      const sleep = Array(96).fill(0);
+      const exDur = [], exLabels = [];
+
+      const snap = await db.collection("tk_health_logs").get();
+      snap.forEach(doc => {
+        const d = doc.data();
+        const t = new Date(d.timestamp);
+        const i = t.getHours() * 4 + Math.floor(t.getMinutes() / 15);
+        if (i < 0 || i >= 96) return;
+        if (d.heartRate) { heart[i] += d.heartRate; heartN[i]++; }
+        if (d.oxygen) { oxygen[i] += d.oxygen; oxygenN[i]++; }
+        if (d.temp) { temp[i] += d.temp; tempN[i]++; }
+        if (d.steps) steps[i] += d.steps;
+        if (d.calories) cal[i] += d.calories;
+        if (d.stress) { stress[i] += d.stress; stressN[i]++; }
+        if (d.sleep) sleep[i] = 1;
+      });
+
+      const coughSnap = await db.collection("tk_cough_logs").get();
+      coughSnap.forEach(doc => {
+        const t = new Date(doc.data().timestamp);
+        const i = t.getHours() * 4 + Math.floor(t.getMinutes() / 15);
+        if (i >= 0 && i < 96) cough[i]++;
+      });
+
+      const exSnap = await db.collection("tk_exercise_logs").get();
+      exSnap.forEach(doc => {
+        const d = doc.data();
+        exLabels.push(d.name);
+        exDur.push(d.duration);
+      });
+
+      drawChart('coughChart', '기침 횟수', cough, 'orange', 'bar');
+      drawChart('tempChart', '체온 (°C)', avg(temp, tempN), 'green', 'line');
+      drawChart('heartChart', '심박수 (bpm)', avg(heart, heartN), 'red', 'line');
+      drawChart('oxygenChart', '산소포화도 (%)', avg(oxygen, oxygenN), 'blue', 'line', timeLabels, 90, 100);
+      drawChart('stepChart', '걸음수 + 칼로리', steps.map((v,i) => v + cal[i]), 'purple', 'bar');
+      drawChart('exerciseChart', '운동 시간(분)', exDur, 'darkgreen', 'bar', exLabels);
+      drawChart('sleepChart', '수면 여부', sleep, 'skyblue', 'bar');
+      drawChart('stressChart', '스트레스 점수', avg(stress, stressN), 'darkorange', 'line');
+    }
+
+    function saveExcel(type) {
+      const value = type === 'monthly' ? document.getElementById("monthPicker").value : document.getElementById("datePicker").value;
+      if (!value) {
+        alert(type === 'monthly' ? "월을 선택해주세요" : "날짜를 선택해주세요");
+        return;
+      }
+      window.open(`/tkhealth_excel.html?${type}=${value}`);
+    }
+
+    window.onload = fetchData;
+  </script>
+</body>
+</html>

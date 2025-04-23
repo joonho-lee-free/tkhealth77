@@ -1,0 +1,76 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>TKHealth 사용자 위치 대시보드</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    select, button { padding: 8px; margin-right: 10px; }
+    #map { width: 100%; height: 400px; margin-top: 20px; }
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&callback=initMap"></script>
+</head>
+<body>
+  <h2>📍 TKHealth 사용자별 위치 보기</h2>
+  <select id="userSelect" onchange="loadLocationLogs()">
+    <option value="tk">TK</option>
+    <option value="mom">엄마</option>
+    <option value="dad">아빠</option>
+  </select>
+  <button onclick="requestLocation()">📡 위치 요청</button>
+  <div id="map"></div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBgo9r4epKHiq2CrXpayDtgHB4M_lgzC68",
+      authDomain: "tkhealth-30380.firebaseapp.com",
+      projectId: "tkhealth-30380",
+      storageBucket: "tkhealth-30380.appspot.com",
+      messagingSenderId: "692900691095",
+      appId: "1:692900691095:web:babfe553aef6aa4dddfdd2"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    let map;
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 35.1796, lng: 129.0756 },
+        zoom: 12
+      });
+    }
+
+    function requestLocation() {
+      const userId = document.getElementById("userSelect").value;
+      const ts = new Date().toISOString();
+      db.collection("location_requests").add({ requestAt: ts, userId });
+      alert(`📡 ${userId}에게 위치 요청을 보냈어요!`);
+    }
+
+    function loadLocationLogs() {
+      const userId = document.getElementById("userSelect").value;
+      db.collection("tk_location_logs")
+        .where("userId", "==", userId)
+        .orderBy("timestamp", "desc")
+        .limit(20)
+        .get()
+        .then(snapshot => {
+          map.setZoom(12);
+          snapshot.forEach(doc => {
+            const d = doc.data();
+            const latlng = { lat: d.latitude, lng: d.longitude };
+            new google.maps.Marker({
+              position: latlng,
+              map,
+              title: `${userId} - ${new Date(d.timestamp).toLocaleString()}`
+            });
+            map.setCenter(latlng);
+          });
+        });
+    }
+  </script>
+</body>
+</html>
